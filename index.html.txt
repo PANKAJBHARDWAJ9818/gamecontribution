@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Orbital Anti-Grav Racer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #05050d;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            background: #0d0f18;
+            display: block;
+        }
+
+        /* HUD Overlay */
+        #hud {
+            position: absolute;
+            top: 15px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .hud-panel {
+            background: rgba(10, 15, 30, 0.75);
+            border: 1px solid #00f0ff;
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            font-size: 16px;
+        }
+
+        #status {
+            color: #00f0ff;
+            text-shadow: 0 0 8px #00f0ff;
+        }
+
+        /* Touch Controls Layer */
+        #touch-controls {
+            position: absolute;
+            bottom: 25px;
+            left: 0;
+            width: 100%;
+            padding: 0 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 15px;
+            pointer-events: auto;
+        }
+
+        .btn {
+            background: rgba(15, 25, 45, 0.8);
+            border: 2px solid #00f0ff;
+            color: #00f0ff;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 0 12px rgba(0, 240, 255, 0.2);
+            transition: background 0.05s, transform 0.05s;
+        }
+
+        .btn:active, .btn.active {
+            background: rgba(0, 240, 255, 0.4);
+            transform: scale(0.95);
+        }
+
+        .btn-steer {
+            width: 75px;
+            height: 75px;
+        }
+
+        .btn-antigrav {
+            width: 140px;
+            height: 80px;
+            border-color: #ff0055;
+            color: #ff0055;
+            box-shadow: 0 0 12px rgba(ff, 0, 85, 0.3);
+            flex-direction: column;
+            gap: 4px;
+            font-size: 14px;
+        }
+
+        .btn-antigrav.active {
+            background: rgba(255, 0, 85, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="hud">
+            <div class="hud-panel" id="score-display">LAP: <span id="lap">1</span> / 3</div>
+            <div class="hud-panel" id="status">MODE: MAGNET GROUND</div>
+            <div class="hud-panel" id="speed-display"><span id="speed">0</span> KM/H</div>
+        </div>
+
+        <div id="touch-controls">
+            <div class="control-group">
+                <div class="btn btn-steer" id="btn-left">◀</div>
+                <div class="btn btn-steer" id="btn-right">▶</div>
+            </div>
+            <div class="control-group">
+                <div class="btn btn-antigrav" id="btn-antigrav">
+                    <span>ANTI-GRAV</span>
+                    <small style="font-size:10px; opacity:0.8;">HOLD TO FLOAT</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Resize Canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Input States
+        const inputs = {
+            left: false,
+            right: false,
+            antiGrav: false
+        };
+
+        // Keyboard Controls
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') inputs.left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') inputs.right = true;
+            if (e.key === ' ' || e.key === 'Shift') inputs.antiGrav = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') inputs.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') inputs.right = false;
+            if (e.key === ' ' || e.key === 'Shift') inputs.antiGrav = false;
+        });
+
+        // Touch Control Helpers
+        function bindTouch(elementId, inputKey) {
+            const btn = document.getElementById(elementId);
+            const start = (e) => { e.preventDefault(); inputs[inputKey] = true; btn.classList.add('active'); };
+            const end = (e) => { e.preventDefault(); inputs[inputKey] = false; btn.classList.remove('active'); };
+            
+            btn.addEventListener('touchstart', start);
+            btn.addEventListener('touchend', end);
+            btn.addEventListener('mousedown', start);
+            btn.addEventListener('mouseup', end);
+        }
+
+        bindTouch('btn-left', 'left');
+        bindTouch('btn-right', 'right');
+        bindTouch('btn-antigrav', 'antiGrav');
+
+        // Game Track Layout Definition (Series of Waypoints & Hazards)
+        const outerTrack = [
+            { x: 300, y: 300 }, { x: 1200, y: 300 },
+            { x: 1500, y: 600 }, { x: 1500, y: 1200 },
+            { x: 1200, y: 1500 }, { x: 300, y: 1500 },
+            { x: 100, y: 1200 }, { x: 100, y: 600 }
+        ];
+
+        // Track Chasms / Pit Gaps (Must use Anti-Grav to cross!)
+        const hazards = [
+            { x: 700, y: 300, radius: 110, type: 'GAP' },
+            { x: 1500, y: 900, radius: 100, type: 'GAP' },
+            { x: 700, y: 1500, radius: 120, type: 'GAP' }
+        ];
+
+        // Player Ship State
+        const ship = {
+            x: 200,
+            y: 400,
+            vx: 0,
+            vy: 0,
+            angle: 0,
+            speed: 0,
+            maxSpeed: 11,
+            accel: 0.2,
+            altitude: 0, // 0 = Grounded, 1 = Anti-Grav Float
+            respawnX: 200,
+            respawnY: 400
+        };
+
+        // Particles Effect Pool
+        const particles = [];
+
+        function createParticles(x, y, color, count = 3) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 1,
+                    color
+                });
+            }
+        }
+
+        // Main Loop
+        function update() {
+            // Anti-Grav Altitude Transition
+            const targetAltitude = inputs.antiGrav ? 1 : 0;
+            ship.altitude += (targetAltitude - ship.altitude) * 0.1;
+
+            // Turning Traction Physics:
+            // High grip on ground (0.08 turn rate), Low grip in air (0.02 turn rate - drift!)
+            const turnSpeed = 0.08 * (1 - ship.altitude * 0.72);
+            if (inputs.left) ship.angle -= turnSpeed;
+            if (inputs.right) ship.angle += turnSpeed;
+
+            // Engine Acceleration
+            ship.speed = Math.min(ship.speed + ship.accel, ship.maxSpeed);
+
+            // Apply direction vector to velocity
+            const thrustX = Math.cos(ship.angle) * ship.speed;
+            const thrustY = Math.sin(ship.angle) * ship.speed;
+
+            // Inertia & Friction (Grip vs Drift)
+            const grip = 0.15 * (1 - ship.altitude * 0.85); // Reduced friction when airborne
+            ship.vx += (thrustX - ship.vx) * grip;
+            ship.vy += (thrustY - ship.vy) * grip;
+
+            // Move Ship
+            ship.x += ship.vx;
+            ship.y += ship.vy;
+
+            // Particle Trails
+            if (ship.altitude > 0.5) {
+                createParticles(ship.x, ship.y, '#ff0055', 2); // Pink Anti-Grav engine trail
+            } else {
+                createParticles(ship.x, ship.y, '#00f0ff', 1); // Blue ground magnet sparks
+            }
+
+            // Check Gap Hazard Collision
+            hazards.forEach(h => {
+                const dist = Math.hypot(ship.x - h.x, ship.y - h.y);
+                if (dist < h.radius) {
+                    // If not floating high enough, drop into the gap!
+                    if (ship.altitude < 0.6) {
+                        // Crash / Reset
+                        ship.x = ship.respawnX;
+                        ship.y = ship.respawnY;
+                        ship.vx = 0;
+                        ship.vy = 0;
+                        ship.speed = 0;
+                    }
+                }
+            });
+
+            // Particle Updates
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.04;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // Update UI HUD
+            document.getElementById('speed').innerText = Math.round(ship.speed * 28);
+            const statusText = ship.altitude > 0.5 ? "ANTI-GRAV FLOAT (NO GRIP)" : "MAGNET GROUND (FULL GRIP)";
+            const statusElem = document.getElementById('status');
+            statusElem.innerText = `MODE: ${statusText}`;
+            statusElem.style.color = ship.altitude > 0.5 ? "#ff0055" : "#00f0ff";
+            statusElem.style.textShadow = ship.altitude > 0.5 ? "0 0 8px #ff0055" : "0 0 8px #00f0ff";
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            // Camera Follow System
+            ctx.translate(canvas.width / 2 - ship.x, canvas.height / 2 - ship.y);
+
+            // Draw Track Outer Ribbon
+            ctx.beginPath();
+            ctx.strokeStyle = '#1e2942';
+            ctx.lineWidth = 180;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            outerTrack.forEach((pt, i) => {
+                if (i === 0) ctx.moveTo(pt.x, pt.y);
+                else ctx.lineTo(pt.x, pt.y);
+            });
+            ctx.closePath();
+            ctx.stroke();
+
+            // Draw Track Centerlines
+            ctx.beginPath();
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([20, 20]);
+            outerTrack.forEach((pt, i) => {
+                if (i === 0) ctx.moveTo(pt.x, pt.y);
+                else ctx.lineTo(pt.x, pt.y);
+            });
+            ctx.closePath();
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw Pit Hazards / Gaps
+            hazards.forEach(h => {
+                ctx.beginPath();
+                ctx.arc(h.x, h.y, h.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#05050d';
+                ctx.fill();
+                ctx.strokeStyle = '#ff0055';
+                ctx.lineWidth = 6;
+                ctx.stroke();
+
+                // Warning stripes
+                ctx.fillStyle = 'rgba(255,0,85,0.2)';
+                ctx.beginPath();
+                ctx.arc(h.x, h.y, h.radius - 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Render Particles
+            particles.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3 * p.life, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.fill();
+            });
+
+            // Draw Ship Shadow (Gives 3D altitude perspective)
+            const scaleOffset = 1 + ship.altitude * 0.4;
+            const shadowDist = 8 + ship.altitude * 20;
+
+            ctx.save();
+            ctx.translate(ship.x + shadowDist, ship.y + shadowDist);
+            ctx.rotate(ship.angle);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.beginPath();
+            ctx.moveTo(15 * scaleOffset, 0);
+            ctx.lineTo(-12 * scaleOffset, -10 * scaleOffset);
+            ctx.lineTo(-12 * scaleOffset, 10 * scaleOffset);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+
+            // Draw Vehicle Ship
+            ctx.save();
+            ctx.translate(ship.x, ship.y - ship.altitude * 15); // Shift up visually when floating
+            ctx.rotate(ship.angle);
+
+            // Craft Body
+            ctx.fillStyle = ship.altitude > 0.5 ? '#ff0055' : '#00f0ff';
+            ctx.shadowColor = ship.altitude > 0.5 ? '#ff0055' : '#00f0ff';
+            ctx.shadowBlur = 15;
+
+            ctx.beginPath();
+            ctx.moveTo(18, 0);
+            ctx.lineTo(-12, -12);
+            ctx.lineTo(-6, 0);
+            ctx.lineTo(-12, 12);
+            ctx.closePath();
+            ctx.fill();
+
+            // Cockpit
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(2, 0, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            ctx.restore();
+        }
+
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
